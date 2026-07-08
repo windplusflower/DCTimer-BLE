@@ -58,6 +58,7 @@ public class BluetoothTools {
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothLeScanner bluetoothLeScanner;
     private boolean mScanning;
+    private boolean smartCubeAutoScan;
     private Set<String> addressMap;
     private List<BLEDevice> cubeList;
     //private BLEDevice bleDevice;
@@ -72,6 +73,7 @@ public class BluetoothTools {
     private List<Integer> preMoves = new ArrayList<>();
     private int prevMoveCnt = -1;
     private long lastTime = -1;
+    private boolean suppressNextDisconnectHint;
     
     private BluetoothGattService findServiceByCharacteristic(BluetoothGatt gatt, UUID readUuid, UUID writeUuid) {
         if (gatt == null) return null;
@@ -127,6 +129,9 @@ public class BluetoothTools {
     }
 
     private boolean shouldShowDeviceType(int deviceType) {
+        if (smartCubeAutoScan) {
+            return isSmartCubeType(deviceType);
+        }
         if (isSmartCubeMode()) {
             return isSmartCubeType(deviceType);
         }
@@ -260,6 +265,16 @@ public class BluetoothTools {
 
     public SmartCube getCube() {
         return smartCube;
+    }
+
+    public BLEDevice getConnectedDevice() {
+        if (connectedIndex >= 0 && connectedIndex < cubeList.size()) {
+            BLEDevice device = cubeList.get(connectedIndex);
+            if (device.getConnected() == 1) {
+                return device;
+            }
+        }
+        return null;
     }
 
     public void notifyLocalCubeReset(String cubeState) {
@@ -466,6 +481,11 @@ public class BluetoothTools {
         }
     }
 
+    public void startSmartCubeAutoScan() {
+        smartCubeAutoScan = true;
+        startScan();
+    }
+
     public void stopScan() {
         if (bluetoothAdapter != null && mScanning) {
             Log.w("dct", "停止搜索");
@@ -483,8 +503,14 @@ public class BluetoothTools {
         }
     }
 
+    public void stopSmartCubeAutoScan() {
+        smartCubeAutoScan = false;
+        stopScan();
+    }
+
     @TargetApi(18)
     public void connectDevice(int pos) {
+        smartCubeAutoScan = false;
         if (mScanning) {
             stopScan();
             context.showScanButton();
@@ -527,6 +553,12 @@ public class BluetoothTools {
     }
 
     @TargetApi(18)
+    public void disconnectSilently() {
+        suppressNextDisconnectHint = true;
+        disconnect();
+    }
+
+    @TargetApi(18)
     private BluetoothGattCallback mBluetoothGattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -543,11 +575,15 @@ public class BluetoothTools {
                 //mBluetoothGatt = null;
                 BLEDevice bleDevice = cubeList.get(connectedIndex);
                 bleDevice.setConnected(0);
-                if (smartTimerProtocol != null && smartTimerStateCallback != null) {
+                boolean suppressHint = suppressNextDisconnectHint;
+                suppressNextDisconnectHint = false;
+                if (!suppressHint && smartTimerProtocol != null && smartTimerStateCallback != null) {
                     smartTimerStateCallback.onTimerDisconnected();
                 }
                 clearConnectedDeviceState();
-                context.disconnectHint(bleDevice);
+                if (!suppressHint) {
+                    context.disconnectHint(bleDevice);
+                }
             }
         }
 
@@ -625,6 +661,11 @@ public class BluetoothTools {
                         }
                     });
                     gatt.disconnect();
+                } else {
+                    BLEDevice connectedDevice = connectedIndex >= 0 && connectedIndex < cubeList.size()
+                            ? cubeList.get(connectedIndex)
+                            : null;
+                    context.onSmartCubeConnected(connectedDevice, resolveProtocolAddress(gatt));
                 }
             } else if (bleDeviceType == BLEDevice.TYPE_QIYI_TIMER) {
                 if (smartTimerProtocol == null || !smartTimerProtocol.start(gatt, service, gatt.getDevice().getName(), resolveProtocolAddress(gatt))) {

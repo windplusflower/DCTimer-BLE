@@ -152,7 +152,7 @@ public class SettingAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                     map.put("detail", itemStr[16][decimalMark]);
                     break;
                 case ST_ENTER_TIME: //成绩输入方式
-                    map.put("detail", itemStr[0][enterTime]);
+                    map.put("detail", itemStr[0][dct.getSessionTimerModeForSetting()]);
                     break;
                 case ST_TIMER_UPDATE: //更新方式
                     map.put("detail", itemStr[1][timerUpdate]);

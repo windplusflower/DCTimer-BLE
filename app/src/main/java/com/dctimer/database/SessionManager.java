@@ -113,9 +113,22 @@ public class SessionManager {
         }
     }
 
+    public int getTimerMode(int i) {
+        Session session = sessionList.get(i);
+        return session.getTimerMode();
+    }
+
+    public void setTimerMode(int i, int timerMode) {
+        Session session = sessionList.get(i);
+        if (session.getTimerMode() != timerMode) {
+            session.setTimerMode(timerMode);
+            db.updateTimerMode(session.getId(), timerMode);
+        }
+    }
+
     public void addSession(String name) {
         int id = db.addSession(name);
-        Session session = new Session(id, name, 33, 0, 8011, sessionList.size() + 1);
+        Session session = new Session(id, name, 33, 0, 8011, sessionList.size() + 1, 0);
         sessionList.add(session);
     }
 

@@ -162,8 +162,8 @@ public class APP extends Application {
         inspectionAlert = sp.getBoolean("wcainsp", false); //观察语音提示
         timeFormat = sp.getInt("timeform", 0);	//时间格式
         decimalMark = sp.getInt("decim", 0);
-        enterTime = sp.getInt("tiway", 0);	// 计时方式
-        if (enterTime > 1) enterTime = 0;
+        enterTime = sp.getInt("tiway", 0);	// 计时方式（旧全局值，仅用于分组迁移默认值）
+        if (enterTime < 0 || enterTime > 4) enterTime = 0;
         timerUpdate = sp.getInt("timerupd", 0);	// 计时器更新
         timerAccuracy = sp.getBoolean("prec", true) ? 1 : 0;	// 计时精度
         freezeTime = sp.getInt("tapt", 0);	//启动延时

@@ -12,14 +12,16 @@ public class Session implements Serializable {
     private int multiPhase;
     private int avg;
     private int sorting;
+    private int timerMode;
 
-    public Session(int id, String name, int puzzle, int multiPhase, int avg, int sorting) {
+    public Session(int id, String name, int puzzle, int multiPhase, int avg, int sorting, int timerMode) {
         this.id = id;
         this.name = name;
         this.puzzle = puzzle;
         this.multiPhase = multiPhase;
         this.avg = avg;
         this.sorting = sorting;
+        this.timerMode = timerMode;
         //Log.w("dct", "["+id+"]"+name+"/"+sorting);
     }
 
@@ -99,5 +101,13 @@ public class Session implements Serializable {
 
     public void setSorting(int sorting) {
         this.sorting = sorting;
+    }
+
+    public int getTimerMode() {
+        return timerMode;
+    }
+
+    public void setTimerMode(int timerMode) {
+        this.timerMode = timerMode;
     }
 }

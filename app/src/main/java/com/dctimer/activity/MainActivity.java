@@ -116,6 +116,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (bluetoothTools != null) bluetoothTools.stopScan();
         }
     };
+    private final Runnable stopAutoSmartCubeScanRunnable = new Runnable() {
+        @Override
+        public void run() {
+            stopAutoSmartCubeScan();
+        }
+    };
 
     private LinearLayout llSession;
     private LinearLayout llSearch;
@@ -187,6 +193,10 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private boolean smartCubeSkipStartForCurrentMove;
     private boolean pendingBleDialogAfterPermission;
     private boolean pendingBleScanAfterPermission;
+    private boolean autoSmartCubeScanActive;
+    private boolean autoSmartCubeConnecting;
+    private int autoSmartCubeScanSessionIdx = -1;
+    private long autoSmartCubeScanDeadlineMs;
 
     private Stackmat stackmat;
     private BluetoothTools bluetoothTools;
@@ -200,6 +210,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private static final int REQUEST_EXPORT_SCRAMBLE = 12;
     private static final int REQUEST_BLE_PERMISSION = 6;
     private static final int ANDROID_API_S = 31;
+    private static final int TIMER_MODE_TIMER = 0;
+    private static final int TIMER_MODE_TYPING = 1;
+    private static final int TIMER_MODE_STACKMAT = 2;
+    private static final int TIMER_MODE_SMART_CUBE = 3;
+    private static final int TIMER_MODE_SMART_TIMER = 4;
     private static final int SMART_CUBE_CORRECTION_LIMIT = 10;
     private static final int STATS_MIN_TEXT_SIZE_SP = 16;
     private static final int STATS_MAX_TEXT_SIZE_SP = 30;
@@ -211,6 +226,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private static final int SMART_CUBE_IMMERSIVE_PHASE_MAX_SP = 36;
     private static final float SMART_CUBE_IMMERSIVE_PHASE_TIMER_RATIO = 0.32f;
     private static final long SMART_CUBE_RESTORE_HINT_INTERVAL_MS = 5000L;
+    private static final long AUTO_SMART_CUBE_SCAN_WINDOW_MS = 120000L;
+    private static final String PREF_LAST_SMART_CUBE_NAME = "lastSmartCubeName";
+    private static final String PREF_LAST_SMART_CUBE_ADDRESS = "lastSmartCubeAddress";
+    private static final String PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS = "lastSmartCubeProtocolAddress";
+    private static final String PREF_LAST_SMART_CUBE_TYPE = "lastSmartCubeType";
+    private static final String PREF_SESSION_SUFFIX = ".session.";
     private static final String PERMISSION_BLUETOOTH_SCAN = "android.permission.BLUETOOTH_SCAN";
     private static final String PERMISSION_BLUETOOTH_CONNECT = "android.permission.BLUETOOTH_CONNECT";
     private static final String SOLVED_FACELET = "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB";
@@ -474,6 +495,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         result = app.getResult();
         sessionManager = app.getSessionManager();
         if (sessionIdx >= sessionManager.getSessionLength()) sessionIdx = 0;
+        applySessionTimerModeOnOpen(false);
         getResult();
         btnSession.setText(sessionManager.getSessionName(sessionIdx));
         btnSessionMean.setText(getString(R.string.session_mean, result.getSessionMean()));
@@ -503,6 +525,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         bluetoothTools = new BluetoothTools(this);
         bluetoothTools.setCubeStateChangedCallback(cubeStateChangeCallback);
         bluetoothTools.setTimerStateCallback(timerStateCallback);
+        startAutoSmartCubeScanForCurrentSession();
         //getBluetoothAdapter();
     }
 
@@ -525,6 +548,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     @Override
     protected void onPause() {
         super.onPause();
+        stopAutoSmartCubeScan();
         if (timer.getTimerState() == DCTTimer.RUNNING) {
             timer.timeEnd = SystemClock.uptimeMillis();
             timer.count();
@@ -1242,6 +1266,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     }
 
     private void startBleScanFlow() {
+        stopAutoSmartCubeScan();
         if (Build.VERSION.SDK_INT < 18 || !getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             Toast.makeText(context, R.string.ble_not_supported, Toast.LENGTH_SHORT).show();
             return;
@@ -1313,6 +1338,253 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     private String getIdleTimerText() {
         return "0" + (decimalMark == 0 ? "." : ",") + (timerAccuracy == 0 ? "00" : "000");
+    }
+
+    private int normalizeTimerMode(int mode) {
+        return mode < TIMER_MODE_TIMER || mode > TIMER_MODE_SMART_TIMER ? TIMER_MODE_TIMER : mode;
+    }
+
+    public int getSessionTimerModeForSetting() {
+        if (sessionManager == null || sessionIdx < 0 || sessionIdx >= sessionManager.getSessionLength()) {
+            return normalizeTimerMode(enterTime);
+        }
+        return normalizeTimerMode(sessionManager.getTimerMode(sessionIdx));
+    }
+
+    private void updateEnterTimeSettingText() {
+        if (stAdapter != null) {
+            stAdapter.setText(ST_ENTER_TIME, itemStr[0][getSessionTimerModeForSetting()]);
+        }
+    }
+
+    private boolean hasConnectedSmartCube() {
+        return bluetoothTools != null && isSmartCubeDeviceType(bleDeviceType) && bluetoothTools.getCube() != null;
+    }
+
+    private int getCurrentSessionIdForPrefs() {
+        if (sessionManager == null || sessionIdx < 0 || sessionIdx >= sessionManager.getSessionLength()) {
+            return sessionIdx;
+        }
+        return sessionManager.getSession(sessionIdx).getId();
+    }
+
+    private String getSessionSmartCubePrefKey(String baseKey) {
+        return baseKey + PREF_SESSION_SUFFIX + getCurrentSessionIdForPrefs();
+    }
+
+    private String getLastSmartCubeString(String baseKey) {
+        String value = sp.getString(getSessionSmartCubePrefKey(baseKey), "");
+        if (!TextUtils.isEmpty(value)) {
+            return value;
+        }
+        if (getSessionTimerModeForSetting() == TIMER_MODE_SMART_CUBE) {
+            return sp.getString(baseKey, "");
+        }
+        return "";
+    }
+
+    private int getLastSmartCubeType() {
+        int scopedType = sp.getInt(getSessionSmartCubePrefKey(PREF_LAST_SMART_CUBE_TYPE), BLEDevice.TYPE_UNKNOWN);
+        if (scopedType != BLEDevice.TYPE_UNKNOWN) {
+            return scopedType;
+        }
+        if (getSessionTimerModeForSetting() == TIMER_MODE_SMART_CUBE) {
+            return sp.getInt(PREF_LAST_SMART_CUBE_TYPE, BLEDevice.TYPE_UNKNOWN);
+        }
+        return BLEDevice.TYPE_UNKNOWN;
+    }
+
+    private boolean hasLastSmartCubeForCurrentSession() {
+        return !TextUtils.isEmpty(getLastSmartCubeString(PREF_LAST_SMART_CUBE_ADDRESS))
+                || !TextUtils.isEmpty(getLastSmartCubeString(PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS))
+                || !TextUtils.isEmpty(getLastSmartCubeString(PREF_LAST_SMART_CUBE_NAME));
+    }
+
+    private boolean hasUsableConnectedSmartCubeForCurrentSession() {
+        if (!hasConnectedSmartCube() || bluetoothTools == null) {
+            return false;
+        }
+        BLEDevice connectedDevice = bluetoothTools.getConnectedDevice();
+        return connectedDevice != null && matchesLastSmartCube(connectedDevice);
+    }
+
+    private void applyManualFallbackTimerState() {
+        enterTime = TIMER_MODE_TIMER;
+        if (stackmat != null) {
+            stackmat.stop();
+            stackmat = null;
+        }
+        setTimerText(getIdleTimerText());
+        setTimerColor(APP.getTextColor());
+        timer.setTimerState(DCTTimer.READY);
+        tvMulPhase.setText("");
+        hideTimerPageCubeState();
+        showScrambleView();
+        updateScrambleTextView();
+    }
+
+    private void applySessionTimerModeOnOpen(boolean allowAutoScan) {
+        stopAutoSmartCubeScan();
+        int savedTimerMode = getSessionTimerModeForSetting();
+        updateEnterTimeSettingText();
+        if (savedTimerMode == TIMER_MODE_SMART_CUBE) {
+            enterTime = TIMER_MODE_SMART_CUBE;
+            if (stackmat != null) {
+                stackmat.stop();
+                stackmat = null;
+            }
+            setTimerText(getIdleTimerText());
+            if (allowAutoScan) {
+                startAutoSmartCubeScanForCurrentSession();
+            }
+            return;
+        }
+        if (hasUsableConnectedSmartCubeForCurrentSession()) {
+            enterTime = TIMER_MODE_SMART_CUBE;
+            setTimerText(getIdleTimerText());
+            return;
+        }
+        if (hasConnectedSmartCube() && bluetoothTools != null) {
+            bluetoothTools.disconnectSilently();
+        }
+        applyManualFallbackTimerState();
+        if (allowAutoScan) {
+            startAutoSmartCubeScanForCurrentSession();
+        }
+    }
+
+    private boolean canStartAutoSmartCubeScan() {
+        if (Build.VERSION.SDK_INT < 18 || !getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            return false;
+        }
+        if (!isLocationServiceEnabled()) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasPermissions(getBlePermissions())) {
+            return false;
+        }
+        return bluetoothTools != null && bluetoothTools.initBluetoothAdapter();
+    }
+
+    private void startAutoSmartCubeScanForCurrentSession() {
+        if (hasUsableConnectedSmartCubeForCurrentSession()) {
+            return;
+        }
+        if (hasConnectedSmartCube() && bluetoothTools != null) {
+            bluetoothTools.disconnectSilently();
+        }
+        if (!hasLastSmartCubeForCurrentSession()) {
+            return;
+        }
+        if (!canStartAutoSmartCubeScan()) {
+            return;
+        }
+        autoSmartCubeScanActive = true;
+        autoSmartCubeConnecting = false;
+        autoSmartCubeScanSessionIdx = sessionIdx;
+        autoSmartCubeScanDeadlineMs = SystemClock.uptimeMillis() + AUTO_SMART_CUBE_SCAN_WINDOW_MS;
+        bluetoothTools.startSmartCubeAutoScan();
+        handler.removeCallbacks(stopAutoSmartCubeScanRunnable);
+        handler.postDelayed(stopAutoSmartCubeScanRunnable, AUTO_SMART_CUBE_SCAN_WINDOW_MS);
+    }
+
+    private void stopAutoSmartCubeScan() {
+        boolean shouldStopScanner = autoSmartCubeScanActive || autoSmartCubeConnecting;
+        handler.removeCallbacks(stopAutoSmartCubeScanRunnable);
+        autoSmartCubeScanActive = false;
+        autoSmartCubeConnecting = false;
+        autoSmartCubeScanSessionIdx = -1;
+        autoSmartCubeScanDeadlineMs = 0L;
+        if (shouldStopScanner && bluetoothTools != null) {
+            bluetoothTools.stopSmartCubeAutoScan();
+        }
+    }
+
+    private boolean shouldRetryAutoSmartCubeScan() {
+        return autoSmartCubeScanActive
+                && autoSmartCubeScanSessionIdx == sessionIdx
+                && SystemClock.uptimeMillis() < autoSmartCubeScanDeadlineMs;
+    }
+
+    private boolean resumeAutoSmartCubeScanAfterFailedConnect() {
+        if (!shouldRetryAutoSmartCubeScan() || bluetoothTools == null || !canStartAutoSmartCubeScan()) {
+            return false;
+        }
+        autoSmartCubeConnecting = false;
+        applyManualFallbackTimerState();
+        bluetoothTools.startSmartCubeAutoScan();
+        return true;
+    }
+
+    private boolean matchesLastSmartCube(BLEDevice device) {
+        if (device == null || !isSmartCubeDeviceType(device.getType())) {
+            return false;
+        }
+        String lastAddress = getLastSmartCubeString(PREF_LAST_SMART_CUBE_ADDRESS);
+        String lastProtocolAddress = getLastSmartCubeString(PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS);
+        String lastName = getLastSmartCubeString(PREF_LAST_SMART_CUBE_NAME);
+        int lastType = getLastSmartCubeType();
+        if (lastType != BLEDevice.TYPE_UNKNOWN && lastType != device.getType()) {
+            return false;
+        }
+        if (!TextUtils.isEmpty(lastAddress) && lastAddress.equalsIgnoreCase(device.getAddress())) {
+            return true;
+        }
+        if (!TextUtils.isEmpty(lastProtocolAddress) && lastProtocolAddress.equalsIgnoreCase(device.getProtocolAddress())) {
+            return true;
+        }
+        return TextUtils.isEmpty(lastAddress)
+                && TextUtils.isEmpty(lastProtocolAddress)
+                && !TextUtils.isEmpty(lastName)
+                && TextUtils.equals(lastName, device.getName());
+    }
+
+    private void tryAutoConnectLastSmartCube(List<BLEDevice> list) {
+        if (!autoSmartCubeScanActive || autoSmartCubeConnecting || list == null || bluetoothTools == null) {
+            return;
+        }
+        if (!shouldRetryAutoSmartCubeScan()) {
+            stopAutoSmartCubeScan();
+            return;
+        }
+        for (int i = 0; i < list.size(); i++) {
+            if (matchesLastSmartCube(list.get(i))) {
+                autoSmartCubeConnecting = true;
+                bluetoothTools.connectDevice(i);
+                return;
+            }
+        }
+    }
+
+    public void onSmartCubeConnected(final BLEDevice device, final String protocolAddress) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                saveLastSmartCube(device, protocolAddress);
+                stopAutoSmartCubeScan();
+                enterTime = TIMER_MODE_SMART_CUBE;
+                setTimerText(getIdleTimerText());
+                updateEnterTimeSettingText();
+                refreshSmartCubeStateUi();
+            }
+        });
+    }
+
+    private void saveLastSmartCube(BLEDevice device, String protocolAddress) {
+        if (device == null) {
+            return;
+        }
+        SharedPreferences.Editor edit = sp.edit();
+        String resolvedProtocolAddress = TextUtils.isEmpty(protocolAddress) ? device.getProtocolAddress() : protocolAddress;
+        edit.putString(getSessionSmartCubePrefKey(PREF_LAST_SMART_CUBE_NAME), device.getName());
+        edit.putString(getSessionSmartCubePrefKey(PREF_LAST_SMART_CUBE_ADDRESS), device.getAddress());
+        edit.putString(getSessionSmartCubePrefKey(PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS), resolvedProtocolAddress);
+        edit.putInt(getSessionSmartCubePrefKey(PREF_LAST_SMART_CUBE_TYPE), device.getType());
+        edit.putString(PREF_LAST_SMART_CUBE_NAME, device.getName());
+        edit.putString(PREF_LAST_SMART_CUBE_ADDRESS, device.getAddress());
+        edit.putString(PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS, resolvedProtocolAddress);
+        edit.putInt(PREF_LAST_SMART_CUBE_TYPE, device.getType());
+        edit.apply();
     }
 
     public void showReadyTimerText() {
@@ -2084,6 +2356,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     }
 
     public void refreshCubeList(List<BLEDevice> list) {
+        tryAutoConnectLastSmartCube(list);
         if (adapter == null) return;
         adapter.setList(list);
         adapter.notifyDataSetChanged();
@@ -2120,6 +2393,9 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 fallbackBleModeToTimer();
                 if (adapter != null)
                     adapter.notifyDataSetChanged();
+                if (resumeAutoSmartCubeScanAfterFailedConnect()) {
+                    return;
+                }
                 Toast.makeText(context, device.getName() + getString(R.string.cube_not_connected), Toast.LENGTH_SHORT).show();
             }
         });
@@ -2129,12 +2405,9 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         if (!isSmartCubeMode() && !isSmartTimerMode()) {
             return;
         }
-        enterTime = 0;
+        enterTime = TIMER_MODE_TIMER;
         bleDeviceType = BLEDevice.TYPE_UNKNOWN;
-        if (stAdapter != null) {
-            stAdapter.setText(ST_ENTER_TIME, itemStr[0][enterTime]);
-        }
-        setPref("tiway", enterTime);
+        updateEnterTimeSettingText();
         setTimerColor(APP.getTextColor());
         setTimerText(getIdleTimerText());
         timer.setTimerState(DCTTimer.READY);
@@ -2555,6 +2828,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                                     resAdapter.reload();
                                     scrollResultToLatest();
                                     setPref("session", sessionIdx);
+                                    applySessionTimerModeOnOpen(true);
                                     setStatsLabel();
                                     break;
                                 }
@@ -2747,26 +3021,30 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 }).setNegativeButton(R.string.btn_cancel, null).show();
                 break;
             case 5: //计时方式
-                new AlertDialog.Builder(context).setSingleChoiceItems(ITEMS_ID[0], enterTime, new DialogInterface.OnClickListener() {
+                final int savedTimerMode = getSessionTimerModeForSetting();
+                new AlertDialog.Builder(context).setSingleChoiceItems(ITEMS_ID[0], savedTimerMode, new DialogInterface.OnClickListener() {
                     @TargetApi(18)
                     @Override
                     public void onClick(DialogInterface dialogInterface, int i) {
-                        if (enterTime == i) return;
+                        if (savedTimerMode == i) return;
                         boolean wasSmartCubeMode = isSmartCubeMode();
-                        enterTime = i;
-                        stAdapter.setText(position, itemStr[0][i]);
-                        if (i < 2) {
+                        int timerMode = normalizeTimerMode(i);
+                        stopAutoSmartCubeScan();
+                        sessionManager.setTimerMode(sessionIdx, timerMode);
+                        enterTime = timerMode;
+                        stAdapter.setText(position, itemStr[0][timerMode]);
+                        if (timerMode < 2) {
                             bluetoothTools.disconnect();
                             if (stackmat != null) {
                                 stackmat.stop();
                                 stackmat = null;
                             }
-                            if (i == 0)
+                            if (timerMode == TIMER_MODE_TIMER)
                                 setTimerText("0" + (decimalMark == 0 ? "." : ",") + (timerAccuracy == 0 ? "00" : "000"));
                             else setTimerText("IMPORT");
                             tvMulPhase.setText("");
                             timer.setTimerState(DCTTimer.READY);
-                        } else if (i == 2) {
+                        } else if (timerMode == TIMER_MODE_STACKMAT) {
                             if (Build.VERSION.SDK_INT > 22) {
                                 if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.RECORD_AUDIO)
                                         != PackageManager.PERMISSION_GRANTED) {
@@ -2780,8 +3058,10 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                                 stackmat.stop();
                                 stackmat = null;
                             }
-                            boolean wcaWasEnabled = wca || inspectionAlert;
-                            disableSmartTimerWcaSettings(false);
+                            boolean wcaWasEnabled = timerMode == TIMER_MODE_SMART_TIMER && (wca || inspectionAlert);
+                            if (timerMode == TIMER_MODE_SMART_TIMER) {
+                                disableSmartTimerWcaSettings(false);
+                            }
                             if (wcaWasEnabled) {
                                 Toast.makeText(context, R.string.smart_timer_wca_auto_disabled, Toast.LENGTH_SHORT).show();
                             }
@@ -2791,8 +3071,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                             hideTimerPageCubeState();
                             showScrambleView();
                         }
-                        //else
-                        setPref("tiway", i);
                         dialogInterface.dismiss();
                     }
                 }).setNegativeButton(R.string.btn_cancel, null).show();
@@ -3961,6 +4239,16 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         edit.remove("timerupd");	edit.remove("timeform");    edit.remove("showstat");
         edit.remove("screenori");   edit.remove("resultorder");
         edit.remove("scgyro"); edit.remove("scvsize");
+        edit.remove(PREF_LAST_SMART_CUBE_NAME); edit.remove(PREF_LAST_SMART_CUBE_ADDRESS);
+        edit.remove(PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS); edit.remove(PREF_LAST_SMART_CUBE_TYPE);
+        for (String key : sp.getAll().keySet()) {
+            if (key.startsWith(PREF_LAST_SMART_CUBE_NAME + PREF_SESSION_SUFFIX)
+                    || key.startsWith(PREF_LAST_SMART_CUBE_ADDRESS + PREF_SESSION_SUFFIX)
+                    || key.startsWith(PREF_LAST_SMART_CUBE_PROTOCOL_ADDRESS + PREF_SESSION_SUFFIX)
+                    || key.startsWith(PREF_LAST_SMART_CUBE_TYPE + PREF_SESSION_SUFFIX)) {
+                edit.remove(key);
+            }
+        }
         edit.remove("applang");
         edit.apply();
     }
@@ -4675,6 +4963,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             scrambleIdx = puzzle;
             setScramble();
         }
+        applySessionTimerModeOnOpen(true);
         setStatsLabel();
     }
 

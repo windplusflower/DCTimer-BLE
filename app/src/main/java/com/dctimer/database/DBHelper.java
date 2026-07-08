@@ -25,7 +25,11 @@ public class DBHelper extends SQLiteOpenHelper {
     public int sessionId;
 
     public DBHelper(Context c) {
-        super(c, DB_NAME, null, 8);
+        super(c, DB_NAME, null, 9);
+    }
+
+    private int normalizeTimerMode(int timerMode) {
+        return timerMode < 0 || timerMode > 4 ? 0 : timerMode;
     }
 
     @Override
@@ -37,7 +41,7 @@ public class DBHelper extends SQLiteOpenHelper {
                     + "scr text not null, time text, note text, "
                     + "p1 integer, p2 integer, p3 integer, p4 integer, p5 integer, p6 integer, moves text, solve_meta text);");
 
-        db.execSQL("create table sessiontb(id integer not null, name text, type integer, mulp integer, ra integer, sorting integer);");
+        db.execSQL("create table sessiontb(id integer not null, name text, type integer, mulp integer, ra integer, sorting integer, tiway integer);");
         db.execSQL("create table resultstb(id integer not null, sid integer not null, "
                 + "rest integer not null, resp integer not null, resd integer not null, scr text, time text, note text, "
                 + "p1 integer, p2 integer, p3 integer, p4 integer, p5 integer, p6 integer, moves text, solve_meta text);");
@@ -53,17 +57,20 @@ public class DBHelper extends SQLiteOpenHelper {
         Cursor c = db.query(TBS_NAME, null, null, null, null, null, null);
         int count = c.getCount();
         if (count == 0) {
+            int defaultTimerMode = normalizeTimerMode(APP.enterTime);
             for (sessionId = 0; sessionId < 15; sessionId++) {
-                Session session = new Session(sessionId, APP.sessionName[sessionId], APP.sesionType[sessionId], 0, 8011, sessionId + 1);
+                Session session = new Session(sessionId, APP.sessionName[sessionId], APP.sesionType[sessionId], 0, 8011, sessionId + 1, defaultTimerMode);
                 sessionList.add(session);
                 ContentValues cv = new ContentValues();
                 cv.put("id", sessionId);
                 cv.put("name", APP.sessionName[sessionId]);
                 cv.put("type", APP.sesionType[sessionId]);
                 cv.put("sorting", sessionId + 1);
+                cv.put("tiway", defaultTimerMode);
                 db.insert(TBS_NAME, null, cv);
             }
         } else {
+            int timerModeColumn = c.getColumnIndex("tiway");
             c.moveToFirst();
             for (int i = 0; i < count; i++) {
                 int avg = c.getInt(4);
@@ -72,7 +79,8 @@ public class DBHelper extends SQLiteOpenHelper {
                 }
                 int sorting = c.getInt(5);
                 if (sorting == 0) sorting = sessionList.size() + 1;
-                Session session = new Session(c.getInt(0), c.getString(1), c.getInt(2), c.getInt(3), avg, sorting);
+                int timerMode = timerModeColumn >= 0 ? c.getInt(timerModeColumn) : APP.enterTime;
+                Session session = new Session(c.getInt(0), c.getString(1), c.getInt(2), c.getInt(3), avg, sorting, normalizeTimerMode(timerMode));
 //                id = c.getInt(0);
 //                name = c.getString(1);
 //                type = c.getInt(2);
@@ -109,6 +117,7 @@ public class DBHelper extends SQLiteOpenHelper {
         cv.put("type", 33);
         cv.put("mulp", 0);
         cv.put("ra", 8011);
+        cv.put("tiway", 0);
         db.insert(TBS_NAME, null, cv);
         return sessionId;
     }
@@ -155,6 +164,12 @@ public class DBHelper extends SQLiteOpenHelper {
     public void updateAverage(int id, int avg) {
         ContentValues cv = new ContentValues();
         cv.put("ra", avg);
+        updateSession(id, cv);
+    }
+
+    public void updateTimerMode(int id, int timerMode) {
+        ContentValues cv = new ContentValues();
+        cv.put("tiway", normalizeTimerMode(timerMode));
         updateSession(id, cv);
     }
 
@@ -289,6 +304,11 @@ public class DBHelper extends SQLiteOpenHelper {
             for (int i = 0; i < TBL_NAME.length; i++) {
                 db.execSQL("alter table " + TBL_NAME[i] + " add solve_meta text");
             }
+        }
+        if (oldVer < 9) {
+            int defaultTimerMode = normalizeTimerMode(APP.enterTime);
+            db.execSQL("alter table sessiontb add tiway integer");
+            db.execSQL("update sessiontb set tiway=?", new Object[] {defaultTimerMode});
         }
     }
 }

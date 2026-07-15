@@ -59,6 +59,7 @@ public class BluetoothTools {
     private BluetoothLeScanner bluetoothLeScanner;
     private boolean mScanning;
     private boolean smartCubeAutoScan;
+    private boolean scanAllTimingDevices;
     private Set<String> addressMap;
     private List<BLEDevice> cubeList;
     //private BLEDevice bleDevice;
@@ -131,6 +132,9 @@ public class BluetoothTools {
     private boolean shouldShowDeviceType(int deviceType) {
         if (smartCubeAutoScan) {
             return isSmartCubeType(deviceType);
+        }
+        if (scanAllTimingDevices) {
+            return isSmartCubeType(deviceType) || isSmartTimerType(deviceType);
         }
         if (isSmartCubeMode()) {
             return isSmartCubeType(deviceType);
@@ -247,18 +251,21 @@ public class BluetoothTools {
     public void getBluetoothAdapter() {
         try {
             bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-            if (bluetoothAdapter != null && !bluetoothAdapter.isEnabled()) {
-                boolean isEnable = bluetoothAdapter.enable();
-                if (!isEnable) {
-                    Log.e("dct", "蓝牙打开失败");
-                }
-            }
         } catch (SecurityException e) {
             Log.e("dct", "获取蓝牙适配器失败", e);
             bluetoothAdapter = null;
         }
         mScanning = false;
         bluetoothLeScanner = null;
+    }
+
+    public boolean isBluetoothEnabled() {
+        try {
+            return bluetoothAdapter != null && bluetoothAdapter.isEnabled();
+        } catch (SecurityException e) {
+            Log.e("dct", "读取蓝牙状态失败", e);
+            return false;
+        }
     }
 
 
@@ -289,6 +296,14 @@ public class BluetoothTools {
 
     public void setTimerStateCallback(SmartTimerProtocol.StateCallback callback) {
         this.smartTimerStateCallback = callback;
+    }
+
+    public void setScanAllTimingDevices(boolean scanAllTimingDevices) {
+        this.scanAllTimingDevices = scanAllTimingDevices;
+    }
+
+    public boolean isScanningAllTimingDevices() {
+        return scanAllTimingDevices;
     }
 
     @TargetApi(18)
@@ -449,7 +464,17 @@ public class BluetoothTools {
 
     public void startScan() {
         cubeList = new ArrayList<>();
-        if (bluetoothAdapter != null && !mScanning) {
+        if (!isBluetoothEnabled()) {
+            Log.w("dct", "蓝牙未开启，取消扫描");
+            context.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    context.showScanButton();
+                }
+            });
+            return;
+        }
+        if (!mScanning) {
             Log.w("dct", "搜索设备");
             addressMap = new HashSet<>();
             try {
@@ -516,6 +541,7 @@ public class BluetoothTools {
             context.showScanButton();
         }
         connectedIndex = pos;
+        scanAllTimingDevices = false;
         BLEDevice bleDevice = cubeList.get(pos);
         bleDeviceType = bleDevice.getType();
         if (bleDeviceType == BLEDevice.TYPE_UNKNOWN) {
@@ -650,32 +676,35 @@ public class BluetoothTools {
                     }
                 });
                 gatt.disconnect();
-            } else if (bleDeviceType == BLEDevice.TYPE_MOYU32_CUBE
+            } else {
+                context.onTimingBleDeviceConnected(bleDeviceType);
+                if (bleDeviceType == BLEDevice.TYPE_MOYU32_CUBE
                     || bleDeviceType == BLEDevice.TYPE_QIYI_CUBE
                     || bleDeviceType == BLEDevice.TYPE_GANI_CUBE) {
-                if (smartCubeProtocol == null || !smartCubeProtocol.start(gatt, service, gatt.getDevice().getName(), resolveProtocolAddress(gatt))) {
-                    context.runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Toast.makeText(context, context.getString(R.string.connect_fail), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                    gatt.disconnect();
-                } else {
-                    BLEDevice connectedDevice = connectedIndex >= 0 && connectedIndex < cubeList.size()
-                            ? cubeList.get(connectedIndex)
-                            : null;
-                    context.onSmartCubeConnected(connectedDevice, resolveProtocolAddress(gatt));
-                }
-            } else if (bleDeviceType == BLEDevice.TYPE_QIYI_TIMER) {
-                if (smartTimerProtocol == null || !smartTimerProtocol.start(gatt, service, gatt.getDevice().getName(), resolveProtocolAddress(gatt))) {
-                    context.runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            Toast.makeText(context, context.getString(R.string.connect_fail), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                    gatt.disconnect();
+                    if (smartCubeProtocol == null || !smartCubeProtocol.start(gatt, service, gatt.getDevice().getName(), resolveProtocolAddress(gatt))) {
+                        context.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(context, context.getString(R.string.connect_fail), Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                        gatt.disconnect();
+                    } else {
+                        BLEDevice connectedDevice = connectedIndex >= 0 && connectedIndex < cubeList.size()
+                                ? cubeList.get(connectedIndex)
+                                : null;
+                        context.onSmartCubeConnected(connectedDevice, resolveProtocolAddress(gatt));
+                    }
+                } else if (bleDeviceType == BLEDevice.TYPE_QIYI_TIMER) {
+                    if (smartTimerProtocol == null || !smartTimerProtocol.start(gatt, service, gatt.getDevice().getName(), resolveProtocolAddress(gatt))) {
+                        context.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(context, context.getString(R.string.connect_fail), Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                        gatt.disconnect();
+                    }
                 }
             }
         }

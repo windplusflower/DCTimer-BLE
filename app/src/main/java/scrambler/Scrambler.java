@@ -16,6 +16,7 @@ import android.util.Log;
 
 import com.dctimer.APP;
 import com.dctimer.R;
+import com.dctimer.model.SmartCubeTraining;
 import com.dctimer.util.StringUtils;
 
 import static scrambler.MegaScramble.*;
@@ -43,6 +44,8 @@ public class Scrambler {
     public static final int TYPE_REL = 30;
     public static final int TYPE_8PZ = 31;
     public static final int TYPE_FTO = 32;
+    public static final int TYPE_MAPLE = 33;
+    public static final int TYPE_CTO = 34;
 
     public static final int SCRAMBLE_NONE = 0;
     public static final int SCRAMBLING = 1;
@@ -77,6 +80,8 @@ public class Scrambler {
             {30, 25},   //bandage
             {30, 20},   //mega subsets
             {5, 0, 0, 0, 0, 0, 0},  //relay
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},  //3x3 CFOP
+            {0, 0, 0},  //3x3 Roux
             {0, 0, -60, 0, 0, 0, 0, 0, -70, 0, 0, 0, 0, -80, -100, 0, -60, 5, 25},  //wca
     };
     private static String[] rotate5 = {"", "3Fw", "3Fw'", "3Fw 3Uw", "3Fw 3Uw2", "3Fw 3Uw'", "3Fw' 3Uw", "3Fw' 3Uw2", "3Fw' 3Uw'", "3Rw", "3Rw2", "3Rw'",
@@ -116,6 +121,39 @@ public class Scrambler {
             {8, 7, 3, 2, 0, 6, 5, 1, 4},
             {8, 7, 3, 2, 0, 6, 5, 1, 4},
             {4, 5, 6, 7, 8, 1, 2, 3, 0}
+    };
+    private static final int[][] CTO_FACELET_DRAW_ORDER = {
+            {0, 3, 5, 7, 8, 1, 4, 6, 2},
+            {2, 4, 1, 3, 0, 6, 7, 5, 8},
+            {2, 4, 1, 3, 0, 6, 7, 5, 8},
+            {0, 3, 5, 7, 8, 1, 4, 6, 2}
+    };
+    private static final int[][] CTO_BOTTOM_FACELET_DRAW_ORDER = {
+            {2, 4, 6, 7, 8, 1, 3, 5, 0},
+            {0, 3, 1, 4, 2, 5, 7, 6, 8},
+            {0, 3, 1, 4, 2, 5, 7, 6, 8},
+            {2, 4, 6, 7, 8, 1, 3, 5, 0}
+    };
+    private static final int[] CTO_FACE_COLORS = {5, 3, 7, 0, 2, 4, 1, 6};
+    private static final int[][][] CTO_MOVE_CYCLES = {
+            {
+                    {5, 14, 23, 32}, {6, 15, 24, 33}, {7, 16, 25, 34}, {8, 17, 26, 35}
+            },
+            {
+                    {19, 60, 64, 33}, {21, 58, 66, 31}, {23, 55, 68, 28}, {18, 56, 63, 29}
+            },
+            {
+                    {64, 41, 1, 32}, {67, 39, 4, 30}, {69, 37, 6, 28}, {65, 36, 2, 27}
+            },
+            {
+                    {59, 50, 41, 68}, {60, 51, 42, 69}, {61, 52, 43, 70}, {62, 53, 44, 71}
+            },
+            {
+                    {1, 42, 46, 15}, {3, 40, 48, 13}, {5, 37, 50, 10}, {0, 38, 45, 11}
+            },
+            {
+                    {19, 14, 46, 59}, {22, 12, 49, 57}, {24, 10, 51, 55}, {20, 9, 47, 54}
+            }
     };
     private static final int[] FTO_MOVE_IDX = {0, 8, 2, 10, 14, 4, 12, 6};
     private static final int[][] FTO_MOVE_CP = {
@@ -190,6 +228,21 @@ public class Scrambler {
         cubeState = "";
     }
 
+    public void setScrambleState(String cubeState) {
+        this.cubeState = cubeState;
+    }
+
+    public void setSingleScramble(int category, String scramble, String cubeState, int imageType) {
+        this.category = category;
+        this.scramble = scramble;
+        this.cubeState = cubeState;
+        this.imageType = imageType;
+        this.hint = "";
+        this.scrambleIdx = 0;
+        this.scrambleList = new ArrayList<>();
+        this.scrambleList.add(scramble);
+    }
+
     public int getCategory() {
         return category;
     }
@@ -207,13 +260,15 @@ public class Scrambler {
     }
 
     public String getCubeState() {
-        if (TextUtils.isEmpty(cubeState) && is333Scramble() && !TextUtils.isEmpty(scramble)) {
+        if ((cubeState == null || cubeState.length() == 0) && is333Scramble() && scramble != null && scramble.length() > 0) {
             return Tools.fromScramble(scramble);
         }
         return cubeState;
     }
 
     public int getImageType() {
+        // CTO 面片映射仍待校验，暂不向用户展示打乱状态图。
+        if (category == 521) return 0;
         return imageType;
     }
 
@@ -294,7 +349,7 @@ public class Scrambler {
         this.scramble = scramble;
         if (category == -29 || (category >= 0 && category < 32)) {   //二阶
             imageType = StringUtils.getImageType(scramble, 1);
-        } else if (category == -32 || category == -27 || category == -25 || category == -28 || category == -26 || (category > 31 && category < 64) || (category > 543 && category < 576)) {
+        } else if (category == -32 || category == -27 || category == -25 || category == -28 || category == -26 || (category > 31 && category < 64) || (category > 543 && category < 576) || SmartCubeTraining.isSmart333Training(category)) {
             imageType = StringUtils.getImageType(scramble, 2);
         } else if (category == -31 || category == -17 || (category > 63 && category < 96)) {    //四阶
             imageType = StringUtils.getImageType(scramble, 3);
@@ -323,6 +378,10 @@ public class Scrambler {
             }
         } else if (category == -14 || category == 517) { //FTO
             imageType = TYPE_FTO;
+        } else if (category == 521) { //CTO
+            imageType = TYPE_CTO;
+        } else if (category == 522) { //枫叶
+            imageType = TYPE_MAPLE;
         }
     }
 
@@ -335,7 +394,7 @@ public class Scrambler {
         cubeState = "";
         scrambleIdx = 0;
         if (resetLength) {
-            if (category < 0) scrambleLen = defaultLength[21][category & 31];
+            if (category < 0) scrambleLen = defaultLength[23][category & 31];
             else scrambleLen = defaultLength[category >> 5][category & 31];
         }
         switch (category) {
@@ -646,7 +705,7 @@ public class Scrambler {
                 hint = solve333(scr);
                 break;
             case 52:    //2gll
-                scr = cube3.solution(cubeState = Tools.randomState(Tools.STATE_SOLVED, new int[]{-1, -1, -1, -1, 0, 0, 0, 0}, new int[]{-1, -1, -1, -1, 4, 5, 6, 7, 8, 9, 10, 11}, Tools.STATE_SOLVED));
+                scr = cube3.solution(cubeState = random2GLLState());
                 imageType = scr.startsWith("Error") ? 0 : 3;
                 scrambleList.add(scr);
                 break;
@@ -681,6 +740,106 @@ public class Scrambler {
                 else scr = megascramble(new String[][] {{"turn the top face ", "turn the bottom face "}, {"turn the right face ", "turn the left face "}, {"turn the front face ", "turn the back face "}}, new String[] {"clockwise by 90 degrees", "by 180 degrees", "counterclockwise by 90 degrees"}, scrambleLen, ", ");
                 if (scr.charAt(0) == 't') scr = "T" + scr.substring(1);
                 imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_OLL:
+                scr = cube3.solution(cubeState = Tools.randomLastLayer());
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_PLL:
+                do {
+                    scr = cube3.solution(cubeState = Tools.randomPLL());
+                } while (scr.length() < 6);
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_LAST_LAYER:
+                scr = cube3.solution(cubeState = Tools.randomLastLayer());
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_F2L:
+                scr = cube3.solution(cubeState = Tools.randomCrossSolved());
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_ZBLL:
+                scr = cube3.solution(cubeState = Tools.randomZBLastLayer());
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_ZZLL:
+                scr = cube3.solution(cubeState = Tools.randomZZLastLayer());
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_2GLL:
+                scr = cube3.solution(cubeState = random2GLLState());
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_ELL:
+                scr = cube3.solution(cubeState = Tools.randomEdgeOfLastLayer());
+                imageType = 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_ZBLS:
+                do {
+                    scr = cube3.solution(cubeState = Tools.randomZBLastSlot());
+                } while (SmartCubeTraining.isComplete(category, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_COLL:
+                do {
+                    scr = cube3.solution(cubeState = randomCOLLState());
+                } while (SmartCubeTraining.isComplete(category, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_OLLCP:
+                do {
+                    scr = cube3.solution(cubeState = Tools.randomLastLayer());
+                } while (SmartCubeTraining.isComplete(SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_OLL, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_EOCP:
+                do {
+                    scr = cube3.solution(cubeState = Tools.randomLastLayer());
+                } while (SmartCubeTraining.isComplete(SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_OLL, cubeState, 0)
+                        || SmartCubeTraining.isComplete(SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_ZBLS, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_CLL:
+                do {
+                    scr = cube3.solution(cubeState = Tools.randomLastLayer());
+                } while (SmartCubeTraining.isComplete(SmartCubeTraining.CATEGORY_333_CFOP_BASE + SmartCubeTraining.SUB_OLL, cubeState, 0)
+                        || SmartCubeTraining.isComplete(category, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_ROUX_BASE + SmartCubeTraining.SUB_ROUX_CMLL:
+                do {
+                    scr = cube3.solution(cubeState = randomRouxCMLLState());
+                } while (SmartCubeTraining.isComplete(category, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_ROUX_BASE + SmartCubeTraining.SUB_ROUX_LSE:
+                do {
+                    scr = cube3.solution(cubeState = randomRouxLSEState());
+                } while (SmartCubeTraining.isComplete(category, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
+                scrambleList.add(scr);
+                break;
+            case SmartCubeTraining.CATEGORY_333_ROUX_BASE + SmartCubeTraining.SUB_ROUX_L10P:
+                do {
+                    scr = cube3.solution(cubeState = randomRouxCMLLState());
+                } while (SmartCubeTraining.isComplete(category, cubeState, 0));
+                imageType = scr.startsWith("Error") ? 0 : 3;
                 scrambleList.add(scr);
                 break;
             case 64: //4阶
@@ -1025,12 +1184,12 @@ public class Scrambler {
                 break;
             case 521:   //CTO
                 scr = scrambleCTO();
-                imageType = 0;
+                imageType = TYPE_CTO;
                 scrambleList.add(scr);
                 break;
-            case 522:   //Ivy Cube
-                scr = IvyCube.scramble();
-                imageType = 0;
+            case 522:   //枫叶
+                scr = Maple.scramble();
+                imageType = TYPE_MAPLE;
                 scrambleList.add(scr);
                 break;
             case 543:   //Gigaminx
@@ -1252,6 +1411,49 @@ public class Scrambler {
         return scramble;
     }
 
+    public static String buildScrambleBetweenStates(String startState, String targetState) {
+        if (startState == null || startState.length() == 0) {
+            return new cs.min2phase.Search().solution(targetState);
+        }
+        String scrambleState = Tools.getScrambleFacelet(startState, targetState);
+        if (scrambleState == null || scrambleState.length() == 0) {
+            return null;
+        }
+        return new cs.min2phase.Search().solution(scrambleState);
+    }
+
+    static String random2GLLState() {
+        return Tools.randomState(
+                Tools.STATE_SOLVED,
+                new int[]{-1, -1, -1, -1, 0, 0, 0, 0},
+                new int[]{-1, -1, -1, -1, 4, 5, 6, 7, 8, 9, 10, 11},
+                Tools.STATE_SOLVED);
+    }
+
+    static String randomCOLLState() {
+        return Tools.randomState(
+                new int[]{-1, -1, -1, -1, 4, 5, 6, 7},
+                new int[]{-1, -1, -1, -1, 0, 0, 0, 0},
+                new int[]{-1, -1, -1, -1, 4, 5, 6, 7, 8, 9, 10, 11},
+                Tools.STATE_SOLVED);
+    }
+
+    static String randomRouxCMLLState() {
+        return Tools.randomState(
+                new int[]{-1, -1, -1, -1, 4, 5, 6, 7},
+                new int[]{-1, -1, -1, -1, 0, 0, 0, 0},
+                new int[]{-1, -1, -1, -1, 4, -1, 6, -1, 8, 9, 10, 11},
+                new int[]{-1, -1, -1, -1, 0, -1, 0, -1, 0, 0, 0, 0});
+    }
+
+    static String randomRouxLSEState() {
+        return Tools.randomState(
+                Tools.STATE_SOLVED,
+                Tools.STATE_SOLVED,
+                new int[]{-1, -1, -1, -1, 4, -1, 6, -1, 8, 9, 10, 11},
+                new int[]{-1, -1, -1, -1, 0, -1, 0, -1, 0, 0, 0, 0});
+    }
+
     private String scramble444() {
         return megascramble(new String[][] {{"U", "D", "Uw"}, {"R", "L", "Rw"}, {"F", "B", "Fw"}}, cubesuff, 40);
     }
@@ -1272,7 +1474,16 @@ public class Scrambler {
         int idx = category >> 5;
         int sub = category & 0x1f;
         return (idx == -1 && (sub == 0 || sub == 5 || sub == 7)) ||
-                (idx == 1 && (sub == 0 || sub == 1 || sub == 19));
+                (idx == 1 && (sub == 0 || sub == 1 || sub == 19)) ||
+                isSmart333TrainingScramble();
+    }
+
+    public boolean is333CfopScramble() {
+        return SmartCubeTraining.is333Cfop(category);
+    }
+
+    public boolean isSmart333TrainingScramble() {
+        return SmartCubeTraining.isSmart333Training(category);
     }
 
     public boolean isSqScramble() {
@@ -1468,8 +1679,12 @@ public class Scrambler {
             int[] img = SkewbFCN.image(scramble);
             if (img == null) return;
             drawSkewb(img, width, p, c);
+        } else if (imageType == TYPE_MAPLE) { //枫叶
+            drawMaple(scramble, width, p, c);
         } else if (imageType == TYPE_FTO) { //FTO
             drawFto(scramble, width, p, c);
+        } else if (imageType == TYPE_CTO) { //CTO
+            drawCto(scramble, width, p, c);
         } else if (imageType == TYPE_15P || imageType == TYPE_15PB) {   //15 puzzle
             int[] img = FifteenPuzzle.image(scramble, imageType == TYPE_15P);
             int wid = width / 6;
@@ -2047,7 +2262,112 @@ public class Scrambler {
         }
     }
 
+    private void drawMaple(String scramble, int width, Paint p, Canvas c) {
+        int[] img = Maple.image(scramble);
+        int[] colors = {pref.getInt("csw4", Color.WHITE), pref.getInt("csw6", 0xffff9900), pref.getInt("csw5", 0xff009900),
+                pref.getInt("csw3", Color.RED), pref.getInt("csw2", Color.BLUE), pref.getInt("csw1", Color.YELLOW)};
+        int b = width / 4;
+        int a = (int) (b * Math.sqrt(3) / 2);
+        int stx = (width - 4 * a) / 2;
+        int sty = (width * 3 / 4 - 3 * b) / 2;
+        int sp = width / 50;
+        float e = (float) (sp / Math.sqrt(3) / 2);
+        float f = (float) (sp * Math.sqrt(3) / 2);
+        float strip = Math.max(1f, sp / 3f);
+        float[] dx = {a * 2, a * 3 - sp, a + sp, a * 2, sp / 2f, a - sp / 2f, sp / 2f, a - sp / 2f, a + sp / 2f, a * 2 - sp / 2f, a + sp / 2f, a * 2 - sp / 2f,
+                a * 2 + sp / 2f, a * 3 - sp / 2f, a * 2 + sp / 2f, a * 3 - sp / 2f, a * 3 + sp / 2f, a * 4 - sp / 2f, a * 3 + sp / 2f, a * 4 - sp / 2f, a + sp / 2f, a * 2 - sp / 2f, a + sp / 2f, a * 2 - sp / 2f};
+        float[] dy = {e * 2, b / 2f, b / 2f, b - e * 2, f, b / 2f + e, b - e, b * 3 / 2f - f, b / 2f + f, b + e, b * 3 / 2f - e, b * 2 - f,
+                b + e, b / 2f + f, b * 2 - f, b * 3 / 2f - e, b / 2f + e, f, b * 3 / 2f - f, b - e, b * 3 / 2f + f, b * 2 + e, b * 5 / 2f - e, b * 3 - f};
+        int d = 0;
+        for (int i = 0; i < 6; i++) {
+            float x0 = stx + dx[i * 4];
+            float x1 = stx + dx[i * 4 + 1];
+            float x2 = stx + dx[i * 4 + 2];
+            float x3 = stx + dx[i * 4 + 3];
+            float y0 = sty + dy[i * 4];
+            float y1 = sty + dy[i * 4 + 1];
+            float y2 = sty + dy[i * 4 + 2];
+            float y3 = sty + dy[i * 4 + 3];
+            if (i == 0) {
+                double dist = distance(dx[3], dy[3], dx[2], dy[2]);
+                double dist3 = Math.sqrt(dist * dist + dist * dist);
+                double dist4 = Math.abs(dx[1] - dx[2]);
+                float height = (float) (dist * (dist / dist3));
+                float height2 = (float) (dist * (dist4 / dist3));
+                d++;
+                drawPolygon(p, c, colors[img[d++]], new float[] {x1, x0, x3}, new float[] {y1, y0, y3}, true);
+                int centerColor = d;
+                drawArc(p, c, colors[img[d++]], new float[] {x2 - height2, x2 + height2}, new float[] {y2 - height, y2 + height}, -45, 90, true);
+                drawPolygon(p, c, colors[img[d++]], new float[] {x2, x0, x3}, new float[] {y2, y0, y3}, true);
+                drawArc(p, c, colors[img[centerColor]], new float[] {x1 - height2, x1 + height2}, new float[] {y1 - height, y1 + height}, 135, 90, true);
+                drawPolygon(p, c, colors[img[centerColor]], new float[] {x0 - strip, x0 + strip, x3 + strip, x3 - strip}, new float[] {y0, y0, y3, y3}, false);
+                d++;
+            } else if (i == 1 || i == 3 || i == 5) {
+                double dist = distance(dx[3], dy[3], dx[2], dy[2]);
+                double dist3 = Math.sqrt(dist * dist + dist * dist);
+                double dist4 = distance(dx[i * 4 + 1], dy[i * 4 + 1], dx[i * 4 + 2], dy[i * 4 + 2]);
+                float height = (float) (dist * (distance(dx[i * 4 + 3], dy[i * 4 + 3], dx[i * 4], dy[i * 4]) / dist3));
+                float height2 = (float) (dist * (dist4 / dist3));
+                float firstRotation = i == 3 ? -60 : -30;
+                float secondRotation = i == 3 ? 120 : 150;
+                d++;
+                drawPolygon(p, c, colors[img[d++]], new float[] {x1, x0, x3}, new float[] {y1, y0, y3}, true);
+                int centerColor = d;
+                drawRotatedArc(p, c, colors[img[d++]], x2, y2, firstRotation, height2, height, -45, 90, true);
+                drawPolygon(p, c, colors[img[d++]], new float[] {x2, x0, x3}, new float[] {y2, y0, y3}, true);
+                drawRotatedArc(p, c, colors[img[centerColor]], x1, y1, secondRotation, height2, height, -45, 90, true);
+                drawPolygon(p, c, colors[img[centerColor]], new float[] {x0 - strip, x0 + strip, x3 + strip, x3 - strip}, new float[] {y0, y0, y3, y3}, false);
+                d++;
+            } else {
+                double dist = distance(dx[3], dy[3], dx[2], dy[2]);
+                double dist3 = Math.sqrt(dist * dist + dist * dist);
+                double dist4 = distance(dx[i * 4], dy[i * 4], dx[i * 4 + 3], dy[i * 4 + 3]);
+                float height = (float) (dist * (distance(dx[i * 4 + 2], dy[i * 4 + 2], dx[i * 4 + 1], dy[i * 4 + 1]) / dist3));
+                float height2 = (float) (dist * (dist4 / dist3));
+                float firstRotation = i == 2 ? -120 : -150;
+                float secondRotation = i == 2 ? 60 : 30;
+                drawPolygon(p, c, colors[img[d++]], new float[] {x0, x1, x2}, new float[] {y0, y1, y2}, true);
+                d++;
+                int centerColor = d;
+                drawRotatedArc(p, c, colors[img[d++]], x3, y3, firstRotation, height2, height, -45, 90, true);
+                d++;
+                drawPolygon(p, c, colors[img[d++]], new float[] {x3, x2, x1}, new float[] {y3, y2, y1}, true);
+                drawRotatedArc(p, c, colors[img[centerColor]], x0, y0, secondRotation, height2, height, -45, 90, true);
+                drawPolygon(p, c, colors[img[centerColor]], new float[] {x1 - strip, x1 + strip, x2 + strip, x2 - strip}, new float[] {y1, y1, y2, y2}, false);
+            }
+        }
+    }
+
+    private double distance(float x1, float y1, float x2, float y2) {
+        double dx = x1 - x2;
+        double dy = y1 - y2;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    private void drawRotatedArc(Paint p, Canvas c, int color, float cx, float cy, float rotation,
+                                float halfWidth, float halfHeight, float startAngle, float sweepAngle, boolean stroke) {
+        c.save();
+        c.translate(cx, cy);
+        c.rotate(rotation);
+        drawArc(p, c, color, new float[] {-halfWidth, halfWidth}, new float[] {-halfHeight, halfHeight}, startAngle, sweepAngle, stroke);
+        c.restore();
+    }
+
     private void drawFto(String scramble, int width, Paint p, Canvas c) {
+        drawOctahedron(ftoImage(scramble), new int[] {7, 0, 6, 1},
+                new int[] {2, 5, 3, 4}, FTO_FACELET_DRAW_ORDER,
+                FTO_FACELET_DRAW_ORDER, width, p, c);
+    }
+
+    private void drawCto(String scramble, int width, Paint p, Canvas c) {
+        drawOctahedron(ctoImage(scramble), new int[] {1, 2, 3, 0},
+                new int[] {7, 4, 5, 6}, CTO_FACELET_DRAW_ORDER,
+                CTO_BOTTOM_FACELET_DRAW_ORDER, width, p, c);
+    }
+
+    private void drawOctahedron(int[] img, int[] topFaces, int[] bottomFaces,
+                                int[][] topDrawOrder, int[][] bottomDrawOrder,
+                                int width, Paint p, Canvas c) {
         int[] rawColors = {
                 pref.getInt("csfto1", Color.WHITE), pref.getInt("csfto2", 0xff880088),
                 pref.getInt("csfto3", 0xff00dd00), pref.getInt("csfto4", Color.RED),
@@ -2058,33 +2378,33 @@ public class Scrambler {
                 rawColors[0], rawColors[2], rawColors[5], rawColors[7],
                 rawColors[6], rawColors[4], rawColors[3], rawColors[1]
         };
-        int[] img = ftoImage(scramble);
         float sp = width / 60f;
         float block = (width - sp * 3) / 4f;
         float left = (width - block * 4 - sp) / 2f;
         float top = (width * 3 / 4f - block * 2) / 2f;
-        drawFtoBlock(img, new int[] {7, 0, 6, 1}, left, top, block * 2, colors, p, c);
-        drawFtoBlock(img, new int[] {2, 5, 3, 4}, left + block * 2 + sp, top, block * 2, colors, p, c);
+        drawOctahedronBlock(img, topFaces, topDrawOrder, left, top, block * 2, colors, p, c);
+        drawOctahedronBlock(img, bottomFaces, bottomDrawOrder,
+                left + block * 2 + sp, top, block * 2, colors, p, c);
     }
 
-    private void drawFtoBlock(int[] img, int[] faces, float x, float y, float size,
-                              int[] colors, Paint p, Canvas c) {
+    private void drawOctahedronBlock(int[] img, int[] faces, int[][] drawOrder,
+                                     float x, float y, float size, int[] colors, Paint p, Canvas c) {
         float midX = x + size / 2f;
         float midY = y + size / 2f;
         float gap = Math.max(1f, size / 80f);
-        drawFtoFace(img, faces[0], FTO_FACELET_DRAW_ORDER[0],
+        drawOctahedronFace(img, faces[0], drawOrder[0],
                 shrinkTriangle(new float[] {x, midX, x}, new float[] {y, midY, y + size}, gap, true),
                 shrinkTriangle(new float[] {x, midX, x}, new float[] {y, midY, y + size}, gap, false),
                 colors, p, c);
-        drawFtoFace(img, faces[1], FTO_FACELET_DRAW_ORDER[1],
+        drawOctahedronFace(img, faces[1], drawOrder[1],
                 shrinkTriangle(new float[] {x, x + size, midX}, new float[] {y, y, midY}, gap, true),
                 shrinkTriangle(new float[] {x, x + size, midX}, new float[] {y, y, midY}, gap, false),
                 colors, p, c);
-        drawFtoFace(img, faces[2], FTO_FACELET_DRAW_ORDER[2],
+        drawOctahedronFace(img, faces[2], drawOrder[2],
                 shrinkTriangle(new float[] {x + size, x + size, midX}, new float[] {y, y + size, midY}, gap, true),
                 shrinkTriangle(new float[] {x + size, x + size, midX}, new float[] {y, y + size, midY}, gap, false),
                 colors, p, c);
-        drawFtoFace(img, faces[3], FTO_FACELET_DRAW_ORDER[3],
+        drawOctahedronFace(img, faces[3], drawOrder[3],
                 shrinkTriangle(new float[] {x, midX, x + size}, new float[] {y + size, midY, y + size}, gap, true),
                 shrinkTriangle(new float[] {x, midX, x + size}, new float[] {y + size, midY, y + size}, gap, false),
                 colors, p, c);
@@ -2104,8 +2424,8 @@ public class Scrambler {
         return out;
     }
 
-    private void drawFtoFace(int[] img, int face, int[] order, float[] ax, float[] ay,
-                             int[] colors, Paint p, Canvas c) {
+    private void drawOctahedronFace(int[] img, int face, int[] order, float[] ax, float[] ay,
+                                    int[] colors, Paint p, Canvas c) {
         int d = 0;
         int faceStart = face * 9;
         float[][] px = new float[4][4];
@@ -2128,6 +2448,54 @@ public class Scrambler {
                 }
             }
         }
+    }
+
+    private int[] ctoImage(String scramble) {
+        int[] img = new int[72];
+        for (int face = 0; face < 8; face++) {
+            for (int sticker = 0; sticker < 9; sticker++) {
+                img[face * 9 + sticker] = CTO_FACE_COLORS[face];
+            }
+        }
+        if (scramble == null || scramble.length() == 0) {
+            return img;
+        }
+        for (String move : scramble.trim().split("\\s+")) {
+            applyCtoMove(img, move);
+        }
+        return img;
+    }
+
+    private void applyCtoMove(int[] img, String move) {
+        if (move == null || move.length() == 0) {
+            return;
+        }
+        char face = move.charAt(0);
+        int axis;
+        switch (Character.toUpperCase(face)) {
+            case 'U': axis = 0; break;
+            case 'F': axis = 1; break;
+            case 'R': axis = 2; break;
+            case 'D': axis = 3; break;
+            case 'B': axis = 4; break;
+            case 'L': axis = 5; break;
+            default: return;
+        }
+        int turns = move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
+        int firstCycle = Character.isLowerCase(face) ? CTO_MOVE_CYCLES[axis].length - 1 : 0;
+        for (int turn = 0; turn < turns; turn++) {
+            for (int cycle = firstCycle; cycle < CTO_MOVE_CYCLES[axis].length; cycle++) {
+                cycleCtoFacelets(img, CTO_MOVE_CYCLES[axis][cycle]);
+            }
+        }
+    }
+
+    private void cycleCtoFacelets(int[] img, int[] cycle) {
+        int temp = img[cycle[0]];
+        img[cycle[0]] = img[cycle[1]];
+        img[cycle[1]] = img[cycle[2]];
+        img[cycle[2]] = img[cycle[3]];
+        img[cycle[3]] = temp;
     }
 
     private int[] ftoImage(String scramble) {
@@ -2288,6 +2656,19 @@ public class Scrambler {
             p.setStyle(Paint.Style.STROKE);
             p.setColor(Color.BLACK);
             c.drawPath(path, p);
+        }
+    }
+
+    private static void drawArc(Paint p, Canvas c, int cl, float[] arx, float[] ary,
+                                float startAngle, float sweepAngle, boolean stroke) {
+        RectF oval = new RectF(arx[0], ary[0], arx[1], ary[1]);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(cl);
+        c.drawArc(oval, startAngle, sweepAngle, false, p);
+        if (stroke) {
+            p.setStyle(Paint.Style.STROKE);
+            p.setColor(Color.BLACK);
+            c.drawArc(oval, startAngle, sweepAngle, false, p);
         }
     }
 

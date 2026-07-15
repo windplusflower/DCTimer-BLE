@@ -23,6 +23,8 @@
         <item>捆绑魔方</item>
         <item>五魔子集</item>
         <item>连拧</item>
+        <item>3阶 CFOP</item>
+        <item>3阶 Roux</item>
     </array>
 
     <array name="item_wca">
@@ -225,6 +227,28 @@
         <item>Mini Guildford challenge</item>
     </array>
 
+    <array name="item_333_cfop">
+        <item>OLL</item>
+        <item>PLL</item>
+        <item>顶层</item>
+        <item>F2L</item>
+        <item>ZBLL</item>
+        <item>ZZLL</item>
+        <item>2GLL</item>
+        <item>ELL</item>
+        <item>ZBLS</item>
+        <item>COLL</item>
+        <item>OLLCP</item>
+        <item>EOCP</item>
+        <item>CLL</item>
+    </array>
+
+    <array name="item_333_roux">
+        <item>CMLL</item>
+        <item>LSE</item>
+        <item>L10P</item>
+    </array>
+
     <array name="opt_penalty">
         <item>无惩罚</item>
         <item>"+2"</item>
@@ -366,6 +390,7 @@
     <array name="item_smart">
         <item>使用解法</item>
         <item>解法朝向基准</item>
+        <item>训练朝向</item>
         <item>打乱推进样式</item>
         <item>虚拟魔方大小</item>
         <item>陀螺仪跟随视角</item>
@@ -390,8 +415,8 @@
     </array>
 
     <array name="opt_smart_scramble_progress">
-        <item>已推进自动消失</item>
         <item>已推进变浅保留</item>
+        <item>已推进自动消失</item>
     </array>
 
     <array name="opt_smart_solve_method">

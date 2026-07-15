@@ -23,6 +23,8 @@
         <item>Bandaged Cube</item>
         <item>Megaminx subsets</item>
         <item>Relay</item>
+        <item>3x3 CFOP</item>
+        <item>3x3 Roux</item>
     </array>
 
     <array name="item_wca">
@@ -225,6 +227,28 @@
         <item>Mini Guildford challenge</item>
     </array>
 
+    <array name="item_333_cfop">
+        <item>OLL</item>
+        <item>PLL</item>
+        <item>Last layer</item>
+        <item>F2L</item>
+        <item>ZBLL</item>
+        <item>ZZLL</item>
+        <item>2GLL</item>
+        <item>ELL</item>
+        <item>ZBLS</item>
+        <item>COLL</item>
+        <item>OLLCP</item>
+        <item>EOCP</item>
+        <item>CLL</item>
+    </array>
+
+    <array name="item_333_roux">
+        <item>CMLL</item>
+        <item>LSE</item>
+        <item>L10P</item>
+    </array>
+
     <array name="opt_penalty">
         <item>No penalty</item>
         <item>"+2"</item>
@@ -373,6 +397,7 @@
     <array name="item_smart">
         <item>Use method</item>
         <item>Solution orientation</item>
+        <item>Training orientation</item>
         <item>Scramble progress style</item>
         <item>Virtual cube size</item>
         <item>Gyro follows view</item>
@@ -397,8 +422,8 @@
     </array>
 
     <array name="opt_smart_scramble_progress">
-        <item>Hide completed moves</item>
         <item>Dim completed moves</item>
+        <item>Hide completed moves</item>
     </array>
 
     <array name="opt_smart_solve_method">

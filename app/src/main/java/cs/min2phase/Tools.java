@@ -285,7 +285,7 @@ public class Tools {
                 new int[] { -1, -1, -1, -1, -1, 5, 6, 7 },
                 new int[] { -1, -1, -1, -1, -1, 0, 0, 0 },
                 new int[] { -1, -1, -1, -1, 4, 5, 6, 7, -1, 9, 10, 11 },
-                STATE_SOLVED);
+                new int[] { -1, -1, -1, -1, 0, 0, 0, 0, -1, 0, 0, 0 });
     }
 
     public static String randomZZLastLayer() {
@@ -446,6 +446,21 @@ public class Tools {
         CubieCube.CornMult(inverseTarget, current, correction);
         CubieCube.EdgeMult(inverseTarget, current, correction);
         return Util.toFaceCube(correction);
+    }
+
+    public static String getScrambleFacelet(String currentFacelets, String targetFacelets) {
+        CubieCube current = new CubieCube();
+        CubieCube target = new CubieCube();
+        if (Util.toCubieCube(currentFacelets, current) != 0 || Util.toCubieCube(targetFacelets, target) != 0) {
+            return null;
+        }
+        CubieCube inverseCurrent = new CubieCube(current);
+        inverseCurrent.temps = new CubieCube();
+        inverseCurrent.invCubieCube();
+        CubieCube scramble = new CubieCube();
+        CubieCube.CornMult(inverseCurrent, target, scramble);
+        CubieCube.EdgeMult(inverseCurrent, target, scramble);
+        return Util.toFaceCube(scramble);
     }
 
     /**
